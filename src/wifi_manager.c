@@ -1016,7 +1016,8 @@ void wifi_manager( void * pvParameters ){
 				uxBits = xEventGroupGetBits(wifi_manager_event_group);
 				if(! (uxBits & WIFI_MANAGER_SCAN_BIT) ){
 					xEventGroupSetBits(wifi_manager_event_group, WIFI_MANAGER_SCAN_BIT);
-					ESP_ERROR_CHECK(esp_wifi_scan_start(&scan_config, false));
+					// ESP_ERROR_CHECK(esp_wifi_scan_start(&scan_config, false));
+					esp_wifi_scan_start(&scan_config, false);
 				}
 
 				/* callback */
