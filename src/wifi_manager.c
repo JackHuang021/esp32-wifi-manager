@@ -1066,7 +1066,7 @@ void wifi_manager( void * pvParameters ){
 					if(uxBits & WIFI_MANAGER_SCAN_BIT){
 						esp_wifi_scan_stop();
 					}
-					ESP_ERROR_CHECK(esp_wifi_connect());
+					esp_wifi_connect();
 				}
 
 				/* callback */
