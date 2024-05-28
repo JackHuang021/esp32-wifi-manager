@@ -40,11 +40,17 @@ function to process requests, decode URLs, serve files, etc. etc.
 #include <esp_event.h>
 #include <esp_log.h>
 #include <esp_system.h>
+#include <esp_tls_crypto.h>
 #include "esp_netif.h"
 #include <esp_http_server.h>
 
 #include "wifi_manager.h"
 #include "http_app.h"
+
+struct auth_info {
+	char *username;
+	char *password;
+};
 
 
 /* @brief tag used for ESP serial console messages */
@@ -83,6 +89,7 @@ extern const uint8_t index_html_end[] asm("_binary_index_html_end");
 const static char http_200_hdr[] = "200 OK";
 const static char http_302_hdr[] = "302 Found";
 const static char http_400_hdr[] = "400 Bad Request";
+const static char http_401_hdr[] = "401 Unauthorized";
 const static char http_404_hdr[] = "404 Not Found";
 const static char http_503_hdr[] = "503 Service Unavailable";
 const static char http_location_hdr[] = "Location";
@@ -96,7 +103,39 @@ const static char http_cache_control_cache[] = "public, max-age=31536000";
 const static char http_pragma_hdr[] = "Pragma";
 const static char http_pragma_no_cache[] = "no-cache";
 
+static char *http_auth(const char *username, const char *password)
+{
+	size_t out;
+	char *user_info = NULL;
+	char *digest = NULL;
+	size_t n = 0;
+	int rc = 0;
 
+	rc = asprintf(&user_info, "%s:%s", username, password);
+
+	if (rc < 0) {
+		ESP_LOGE(TAG, "asprintf returned: %d", rc);
+		return NULL;
+	}
+
+	if (!user_info) {
+		ESP_LOGE(TAG, "no enough memory for user information");
+		return NULL;
+	}
+
+	esp_crypto_base64_encode(NULL, 0, &n, (const unsigned char *)user_info,
+							 strlen(user_info));
+
+	digest = malloc(6 + n + 1);
+	if (digest) {
+		strcpy(digest, "Basic ");
+		esp_crypto_base64_encode((unsigned char *)digest + 6, n, &out,
+								 (const unsigned char *)user_info,
+								 strlen(user_info));
+	}
+	free(user_info);
+	return digest;
+}
 
 esp_err_t http_app_set_handler_hook( httpd_method_t method,  esp_err_t (*handler)(httpd_req_t *r)  ){
 
@@ -113,7 +152,6 @@ esp_err_t http_app_set_handler_hook( httpd_method_t method,  esp_err_t (*handler
 	}
 
 }
-
 
 static esp_err_t http_server_delete_handler(httpd_req_t *req){
 
@@ -136,7 +174,6 @@ static esp_err_t http_server_delete_handler(httpd_req_t *req){
 
 	return ESP_OK;
 }
-
 
 static esp_err_t http_server_post_handler(httpd_req_t *req){
 
@@ -208,14 +245,80 @@ static esp_err_t http_server_post_handler(httpd_req_t *req){
 	return ret;
 }
 
-
 static esp_err_t http_server_get_handler(httpd_req_t *req){
 
     char* host = NULL;
+	char *auth = NULL;
+	char *auth_credentials = NULL;
     size_t buf_len;
     esp_err_t ret = ESP_OK;
+	struct auth_info *auth_info = req->user_ctx;
 
-    ESP_LOGD(TAG, "GET %s", req->uri);
+    ESP_LOGI(TAG, "GET %s", req->uri);
+
+	buf_len = httpd_req_get_hdr_value_len(req, "Authorization") + 1;
+	if (buf_len > 1) {
+		auth = malloc(buf_len);
+		if (!auth) {
+			ESP_LOGE(TAG, "no enough memory for authorization");
+			return ESP_ERR_NO_MEM;
+		}
+		ret = httpd_req_get_hdr_value_str(req, "Authorization", auth, buf_len);
+		if (ESP_OK == ret) {
+			ESP_LOGD(TAG, "found header => Authorization %s", auth);
+		} else {
+			ESP_LOGE(TAG, "no auth value received");
+		}
+
+		auth_credentials = http_auth(auth_info->username, auth_info->password);
+		if (!auth_credentials) {
+			ESP_LOGE(TAG, "no enough memory for basic authorization credentials");
+			free(auth);
+			return ESP_ERR_NO_MEM;
+		}
+
+		if (strncmp(auth_credentials, auth, buf_len)) {
+			ESP_LOGE(TAG, "Not authenticated");
+			httpd_resp_set_status(req, http_401_hdr);
+			httpd_resp_set_type(req, "application/json");
+			httpd_resp_set_hdr(req, "Connection", "keep-alive");
+			httpd_resp_set_hdr(req, "WWW-Authenticate", "Basic realm=\"Hello\"");
+			httpd_resp_send(req, NULL, 0);
+		} else {
+			char *basic_auth_resp = NULL;
+			int rc = 0;
+
+			ESP_LOGI(TAG, "authenticated");
+			httpd_resp_set_status(req, HTTPD_200);
+			httpd_resp_set_type(req, "application/json");
+			httpd_resp_set_hdr(req,"Connection", "keep-alive");
+			rc = asprintf(&basic_auth_resp, "{\"authenticated\":true,\"user\":\"%s\"}",
+						  auth_info->username);
+			if (rc < 0) {
+				ESP_LOGE(TAG, "asprintf() returned: %d", rc);
+				free(auth_credentials);
+				free(auth);
+				return ESP_FAIL;
+			}
+			if (!basic_auth_resp) {
+				ESP_LOGE(TAG, "No enough memory for basic authorization response");
+				free(auth_credentials);
+				free(auth);
+				return ESP_ERR_NO_MEM;
+			}
+			// httpd_resp_send(req, basic_auth_resp, strlen(basic_auth_resp));
+			free(basic_auth_resp);
+		}
+		free(auth_credentials);
+		free(auth);
+	} else {
+		ESP_LOGI(TAG, "No auth header received");
+		httpd_resp_set_status(req, http_401_hdr);
+		httpd_resp_set_type(req, "application/json");
+		httpd_resp_set_hdr(req, "Connection", "keep-alive");
+		httpd_resp_set_hdr(req, "WWW-Authenticate", "Basic realm=\"Hello\"");
+		httpd_resp_send(req, NULL, 0);
+    }
 
     /* Get header value string length and allocate memory for length + 1,
      * extra byte for null termination */
@@ -336,19 +439,19 @@ static esp_err_t http_server_get_handler(httpd_req_t *req){
 }
 
 /* URI wild card for any GET request */
-static const httpd_uri_t http_server_get_request = {
+static httpd_uri_t http_server_get_request = {
     .uri       = "*",
     .method    = HTTP_GET,
     .handler   = http_server_get_handler
 };
 
-static const httpd_uri_t http_server_post_request = {
+static httpd_uri_t http_server_post_request = {
 	.uri	= "*",
 	.method = HTTP_POST,
 	.handler = http_server_post_handler
 };
 
-static const httpd_uri_t http_server_delete_request = {
+static httpd_uri_t http_server_delete_request = {
 	.uri	= "*",
 	.method = HTTP_DELETE,
 	.handler = http_server_delete_handler
@@ -419,9 +522,16 @@ void http_app_start(bool lru_purge_enable){
 
 	esp_err_t err;
 
+	esp_log_level_set(TAG, ESP_LOG_VERBOSE);
+
 	if(httpd_handle == NULL){
 
 		httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+		struct auth_info *auth_info = malloc(sizeof(struct auth_info));
+
+		auth_info->username = "jack";
+		auth_info->password = "87094748";
+		http_server_get_request.user_ctx = auth_info;
 
 		/* this is an important option that isn't set up by default.
 		 * We could register all URLs one by one, but this would not work while the fake DNS is active */
