@@ -1,80 +1,94 @@
-# esp32-wifi-manager
+# What is esp32-wifi-manager?
 
-该组件原作者[tonyp7/esp32-wifi-manager](https://github.com/tonyp7/esp32-wifi-manager)，原作者已经不再进行维护，在原作基础上适配了最新的esp-idf sdk，解决了一些bug，原始的[README链接](README_ori.md)
+### Build status [![Build Status](https://travis-ci.com/tonyp7/esp32-wifi-manager.svg?branch=master)](https://travis-ci.com/tonyp7/esp32-wifi-manager)
 
-*esp32-wifi-manager* 是一个纯C的esp-idf组件，该组件可通过web端配置和查看wifi连接信息
+*esp32-wifi-manager* is a pure C esp-idf component for ESP32 that enables easy management of wifi networks through a web portal.
 
-*esp32-wifi-manager* 将在启动时自动尝试重新连接到之前保存的网络，如果找不到保存的wifi，它将启动自己的AP接入点，您可以通过该接入点进入到web端管理和连接到ESP32的wifi网络，成功连接后，软件将在一段时间后（默认为1分钟）自动关闭AP接入点。
+*esp32-wifi-manager* is is an all in one wifi scanner, http server & dns daemon living in the least amount of RAM possible.
 
-*esp32-wifi-manager* 支持esp-idf 4.2及以上的版本
+*esp32-wifi-manager* will automatically attempt to re-connect to a previously saved network on boot, and if it cannot find a saved wifi it will start its own access point through which you can manage and connect to wifi networks. Upon a succesful connection, the software will shutdown the access point automatically after some time (1 minute by default).
 
-# 目录
-- [esp32-wifi-manager](#esp32-wifi-manager)
-- [目录](#目录)
-- [演示照片](#演示照片)
-- [使用](#使用)
-  - [前提条件](#前提条件)
-  - [快速开始](#快速开始)
-  - [配置](#配置)
-- [将esp32-wifi-manager加入到您的代码](#将esp32-wifi-manager加入到您的代码)
-  - [与esp32-wifi-manager集成](#与esp32-wifi-manager集成)
-    - [事件列表](#事件列表)
-    - [事件参数](#事件参数)
-  - [与http服务器交互](#与http服务器交互)
-  - [线程安全和NVS访问](#线程安全和nvs访问)
+*esp32-wifi-manager* compiles with esp-idf 4.2 and above. See [Getting Started](#getting-started) to guide you through your first setup.
+
+# Content
+- [What is esp32-wifi-manager?](#what-is-esp32-wifi-manager)
+    - [Build status ](#build-status-)
+- [Content](#content)
+- [Look and Feel](#look-and-feel)
+- [Getting Started](#getting-started)
+  - [Requirements](#requirements)
+  - [Hello World](#hello-world)
+  - [Configuring the Wifi Manager](#configuring-the-wifi-manager)
+- [Adding esp32-wifi-manager to your code](#adding-esp32-wifi-manager-to-your-code)
+  - [Interacting with the manager](#interacting-with-the-manager)
+    - [List of events](#list-of-events)
+    - [Events parameters](#events-parameters)
+  - [Interacting with the http server](#interacting-with-the-http-server)
+  - [Thread safety and access to NVS](#thread-safety-and-access-to-nvs)
 - [License](#license)
-   
 
-# 演示照片
+
+# Look and Feel
 ![](https://raw.githubusercontent.com/JackHuang021/images/master/20240603230034.png)
 
-# 使用
+# Getting Started
 
-## 前提条件
-- esp-idf **4.2及以上版本**
-- esp32系列芯片
+## Requirements
 
-## 快速开始
+To get you started, esp32-wifi-manager needs:
 
-clone仓库
+- esp-idf **4.2 and up**
+- esp32 or esp32-s2
+
+There are breaking changes and new features in esp-idf 4.1 and 4.2 which makes esp32-wifi-manager incompatible with anything lower than 4.2. This includes esp_netif (introduced in 4.1) and esp_event_handler_instance_t (introduced in 4.2). It is recommended to compile esp32-wifi-manager with the master tree to avoid any compatibility issue.
+
+## Hello World
+
+Clone the repository where you want it to be. If you are unfamiliar with Git, you can use Github Desktop on Windows:
+
 ```bash 
 git clone https://github.com/JackHuang021/esp32-wifi-manager.git
 ```
 
-进入到 *examples* 下的 *default_demo* 工程目录
+Navigate under the included example:
 
 ```bash
 cd esp32-wifi-manager/examples/default_demo
 ```
 
-通过*idf*工具编译烧录到esp32
+Compile the code and load it on your esp32:
+
 ```bash
 idf.py build flash monitor
 ```
 
-烧录完成后，使用任何具有wifi功能的设备，您都会看到一个名为*esp32*的新wifi接入点。使用默认密码*esp32pwd*连接到它。如果你的设备上没有弹出专属入口，你可以访问默认IP地址：http://10.10.0.1
+_Note: while it is encouraged to use the newer build system with idf.py and cmake, esp32-wifi-manager still supports the legacy build system. If you are using make on Linux or make using MSYS2 on Windows, you can still use "make build flash monitor" if you prefer_
 
-## 配置
+Now, using any wifi capable device, you will see a new wifi access point named *esp32*. Connect to it using the default password *esp32pwd*. If the captive portal does not pop up on your device, you can access the wifi manager at its default IP address: http://10.10.0.1.
 
-通过 *menuconfig* 进行配置
+## Configuring the Wifi Manager
+
+esp32-wifi-manager can be configured without touching its code. At the project level use:
+
 ```bash
 idf.py menuconfig
 ```
 
-进入到 Component config -> Wifi Manager Configuration，可以看到下面的界面：
+Navigate in "Component config" then pick "Wifi Manager Configuration". You will be greeted by the following screen:
+
 ![esp32-wifi-manager-menuconfig](https://raw.githubusercontent.com/JackHuang021/images/master/20240603230323.png "menuconfig screen")
 
-您可以更改AP接入点的的ssid和密码，但强烈建议保留默认值。您的密码长度应该在8到63个字符之间，以符合WPA2标准。如果密码设置为空值或长度小于8个字符，则*esp32-wifi-manager*会将其接入点创建为开放的wifi网络。
+You can change the ssid and password of the access point at your convenience, but it is highly recommended to keep default values. Your password should be between 8 and 63 characters long, to comply with the WPA2 standard. If the password is set to an empty value or is less than 8 characters long, esp32-wifi-manager will create its access point as an open wifi network.
 
-您还可以更改各种计时器的值，例如，一旦建立连接，接入点关闭所需的时间（默认值：60000ms）。将此计时器设置为0，将看不到连接wifi成功的反馈，关闭AP接入点将立即终止web端的当前会话，请谨慎设置。
+You can also change the values for various timers, for instance how long it takes for the access point to shutdown once a connection is established (default: 60000). While it could be tempting to set this timer to 0, just be warned that in that case the user will never get the feedback that a connection is succesful. Shutting down the AP will instantly kill the current navigating session on the captive portal.
 
-最后，您可以通过将默认URL地址 ”*/*“ 更改为其它地址，例如 ”*/wifimanager/*“，选择将 *esp32-wifi-manager* 重新定位到不同的URL，如果您希望自己的web应用程序与 *esp32-wifi-manager* 的网页共存，此功能尤其有用。
+Finally, you can choose to relocate esp32-wifi-manager to a different URL by changing the default value of "/" to something else, for instance "/wifimanager/". Please note that the trailing slash does matter. This feature is particularly useful in case you want your own webapp to co-exist with esp32-wifi-manager's own web pages.
 
-# 将esp32-wifi-manager加入到您的代码
+# Adding esp32-wifi-manager to your code
 
-为了在您的esp-idf项目中有效地使用 *esp32-wifi-manager* ，请将整个 *esp32-wifi-manager* 仓库复制（或git clone）到 *components* 子文件夹中。
+In order to use esp32-wifi-manager effectively in your esp-idf projects, copy the whole esp32-wifi-manager repository (or git clone) into a components subfolder.
 
-工程目录结构应该如下所示:
+Your project should look like this:
 
   - project_folder
     - build
@@ -83,13 +97,14 @@ idf.py menuconfig
     - main
       - main.c
 
-完成后，您需要编辑项目根目录下的 *CMakeLists.txt* 文件，以注册 *components* 文件夹，通过添加以下行来完成的：
+Once this is done, you need to edit the CMakeLists.txt file at the root of your project to register the components folder. This is done by adding the following line:
 
 ```cmake
 set(EXTRA_COMPONENTS_DIRS components/)
 ```
 
-通常 *CMakeLists.txt* 的内容如下所示
+A typical CmakeLists.txt file should look like this:
+
 ```cmake
 cmake_minimum_required(VERSION 3.5)
 set(EXTRA_COMPONENT_DIRS components/)
@@ -97,23 +112,31 @@ include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(name_of_your_project)
 ```
 
+If you are using the old build system with make instead, you should edit the Makefile instead such as:
 
-完成后，您现在可以在用户代码中添加头文件：
+```make
+PROJECT_NAME := name_of_your_project
+EXTRA_COMPONENT_DIRS := components/
+include $(IDF_PATH)/make/project.mk
+```
+
+Once this is done, you can now in your user code add the header:
+
 ```c
 #include "wifi_manager.h"
 ```
 
-您现在需要做的就是在代码中调用 `wifi_manager_start()` ，如果您不清楚怎么使用，请参阅[examples/default_demo](examples/default_demo)。
+All you need to do now is to call wifi_manager_start(); in your code. See [examples/default_demo](examples/default_demo) if you are uncertain.
 
 
-## 与esp32-wifi-manager集成
+## Interacting with the manager
 
-实际上，有三种不同的方法可以将 esp32-wifi-manager 集成到您的代码中，并与之交互：
-* 在你的代码中轮询 wifi 连接状态
-* 使用事件回调
-* 直接修改 *esp32-wifi-manager* 代码以满足您的需求
+Ther are effectively three different ways you can embed esp32-wifi-manager with your code:
+* Just forget about it and poll in your code for wifi connectivity status
+* Use event callbacks
+* Modify esp32-wifi-manager code directly to fit your needs
 
-**事件回调**是使用 *esp32-wifi-manager* 最简洁的方式，也是推荐的方式。一个典型的用例是当 *esp32-wifi-manager* 最终连接到接入点时收到通知。为了做到这一点，您只需定义一个回调函数：
+**Event callbacks** are the cleanest way to use the wifi manager and that's the recommended way to do it. A typical use-case would be to get notified when wifi manager finally gets a connection to an access point. In order to do this you can simply define a callback function:
 
 ```c
 void cb_connection_ok(void *pvParameter){
@@ -121,17 +144,17 @@ void cb_connection_ok(void *pvParameter){
 }
 ```
 
-然后只需通过调用以下命令进行事件注册：
+Then just register it by calling:
 
 ```c
 wifi_manager_set_callback(WM_EVENT_STA_GOT_IP, &cb_connection_ok);
 ```
 
-现在每次触发事件时它都会调用此函数。[examples/default_demo](examples/default_demo)包含使用回调的示例代码。
+That's it! Now everytime the event is triggered it will call this function. The [examples/default_demo](examples/default_demo) contains sample code using callbacks.
 
-### 事件列表
+### List of events
 
-可以添加回调的事件列表由 *wifi_manager.h* 中的 *message_code_t* 定义。它们如下：
+The list of possible events you can add a callback to are defined by message_code_t in wifi_manager.h. They are as following:
 
 * WM_ORDER_START_HTTP_SERVER
 * WM_ORDER_STOP_HTTP_SERVER
@@ -147,39 +170,39 @@ wifi_manager_set_callback(WM_EVENT_STA_GOT_IP, &cb_connection_ok);
 * WM_EVENT_STA_GOT_IP
 * WM_ORDER_STOP_AP
 
-实际上，跟踪 *WM_EVENT_STA_GOT_IP* 和 *WM_EVENT_STA_DISCONNECTED* 是了解您的 esp32 是否有连接的关键。在使用 *esp32-wifi-manager* 的典型应用程序中，其他消息大多可以忽略。
+In practice, keeping track of WM_EVENT_STA_GOT_IP and WM_EVENT_STA_DISCONNECTED is key to know whether or not your esp32 has a connection. The other messages can mostly be ignored in a typical application using esp32-wifi-manager.
 
-### 事件参数
+### Events parameters
 
-回调函数参数包含一个 `void` 指针，对于大多数事件，此参数为空，少数选定事件具有可供用户代码利用的附加数据，如下：
+Callback signature includes a void* pointer. For most events, this additional parameter is empty and sent as a NULL value. A few select events have additional data which can be leveraged by user code. They are listed below:
 
-* `WM_EVENT_SCAN_DONE` 与 `wifi_event_sta_scan_done_t *` 对象一起发送。
-* `WM_EVENT_STA_DISCONNECTED` 与 `wifi_event_sta_disconnected_t *` 对象一起发送。
-* `WM_EVENT_STA_GOT_IP` 与 `ip_event_got_ip_t *` 对象一起发送。
+* WM_EVENT_SCAN_DONE is sent with a wifi_event_sta_scan_done_t* object.
+* WM_EVENT_STA_DISCONNECTED is sent with a wifi_event_sta_disconnected_t* object.
+* WM_EVENT_STA_GOT_IP is sent with a ip_event_got_ip_t* object.
 
-这些对象是标准的 esp-idf 结构，并在[官方页面](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/network/esp_wifi.html)有记录。
+These objects are standard esp-idf structures, and are documented as such in the [official pages](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/network/esp_wifi.html).
 
-[examples/default_demo](examples/default_demo)演示了如何读取 `ip_event_got_ip_t` 对象来访问分配给 esp32 的 IP 地址。
+The [examples/default_demo](examples/default_demo) demonstrates how you can read a ip_event_got_ip_t object to access the IP address assigned to the esp32.
 
-## 与http服务器交互
+## Interacting with the http server
 
-由于 *esp32-wifi-manager* 生成了自己的 http 服务器，您可能希望扩展此服务器以在应用程序中提供您自己的页面。 可以使用标准 esp_http_server 来注册您自己的 URL 处理程序来实现这一点。
+Because esp32-wifi-manager spawns its own http server, you might want to extend this server to serve your own pages in your application. It is possible to do so by registering your own URL handler using the standard esp_http_server signature:
 
 ```c
 esp_err_t my_custom_handler(httpd_req_t *req){
 ```
 
-然后通过以下方式注册处理程序
+And then registering the handler by doing
 
 ```c
 http_app_set_handler_hook(HTTP_GET, &my_custom_handler);
 ```
 
-[examples/http_hook](examples/http_hook) 包含了一个 `/helloworld` 注册网页的示例
+The [examples/http_hook](examples/http_hook) contains an example where a web page is registered at /helloworld
 
-## 线程安全和NVS访问
+## Thread safety and access to NVS
 
-*esp32-wifi-manager* 访问非易失性存储以将其wifi配置信息存储并加载到专用命名空间 `espwifimgr` 中。如果您想确保永远不会与对 NVS 的并发访问发生冲突，您可以包含 `nvs_sync.h` 并使用 `nvs_sync_lock()` 和 `nvs_sync_unlock()` 的调用。
+esp32-wifi-manager accesses the non-volatile storage to store and loads its configuration into a dedicated namespace "espwifimgr". If you want to make sure there will never be a conflict with concurrent access to the NVS, you can include nvs_sync.h and use calls to nvs_sync_lock and nvs_sync_unlock.
 
 ```c
 nvs_handle handle;
@@ -192,8 +215,8 @@ if(nvs_sync_lock( portMAX_DELAY )){
     nvs_sync_unlock();
 }
 ```
-`nvs_sync_lock` 等待作为参数发送给它的 `ticks` 数以获取互斥锁，建议使用 portMAX_DELAY，实际上，`nvs_sync_lock()` 几乎永远不会等待。
+nvs_sync_lock waits for the number of ticks sent to it as a parameter to acquire a mutex. It is recommended to use portMAX_DELAY. In practice, nvs_sync_lock will almost never wait.
 
 
 # License
-*esp32-wifi-manager* 使用了MIT LICENSE。因此，只要您保留原始版权，它就可以包含在任何项目中，无论是否是商业项目。请您务必阅读LICENSE文件。
+*esp32-wifi-manager* is MIT licensed. As such, it can be included in any project, commercial or not, as long as you retain original copyright. Please make sure to read the license file.
